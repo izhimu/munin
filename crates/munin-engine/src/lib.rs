@@ -7,7 +7,7 @@ pub mod fast;
 pub mod slow;
 
 pub use fast::{LayaFastEngine, MockFastEngine};
-pub use slow::{MockSlowEngine, OpenAISlowEngine};
+pub use slow::{MockSlowEngine, OpenAISlowEngine, RpcSlowEngine};
 
 /// 快引擎接口契约 (System 1)：低延迟、确定性输出、置信度统计
 #[async_trait]

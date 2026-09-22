@@ -198,8 +198,8 @@ munin/
 │   ├── munin-driver/           # Driver trait, MockDriver & CdpDriver (Chromiumoxide)
 │   ├── munin-engine/           # LayaFastEngine (10ms) & OpenAISlowEngine (LLM)
 │   ├── munin-perception/       # OverlayBuster, StateProbe, FormMapper, CandidatePruner
-│   └── munin-core/             # BiSystemSupervisor, FSM, and Confidence Gating
-├── docs/
+│   ├── munin-core/             # BiSystemSupervisor, FSM, and Confidence Gating
+│   └── munin-cli/              # Standalone CLI binary (open, run, demo)
 │   └── ARCHITECTURE_DESIGN.md  # In-depth technical whitepaper and formal specs
 └── tests/
     └── e2e_test.rs             # Full-suite integration tests
@@ -253,8 +253,7 @@ All 15 test suites pass with **0 errors, 0 warnings**.
 - [x] Autonomous popup & overlay buster middleware
 - [x] Zero-dependency `MockDriver` for blazingly fast CI testing
 - [ ] Direct Playwright WebDriver BiDi adapter (Firefox & WebKit native support)
-- [ ] Standalone `munin-cli` binary with YAML scenario execution
-- [ ] Python PyO3 bindings for drop-in Playwright/pytest-python integration
+- [x] Standalone `munin-cli` binary (`munin open`, `munin run`, `munin demo`)
 
 ---
 

@@ -6,6 +6,7 @@ members = [
     "crates/munin-engine",
     "crates/munin-perception",
     "crates/munin-core",
+    "crates/munin-cli",
 ]
 
 [workspace.package]
@@ -34,3 +35,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chromiumoxide = { version = "0.9", default-features = false, features = ["rustls", "zip0"] }
 futures = "0.3"
+toml = "0.8"
+serde_yaml = "0.9"

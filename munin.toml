@@ -1,0 +1,39 @@
+# ==============================================================================
+# 🦅 Munin (奥丁灵鸦) - 双引擎浏览器自动化框架配置文件
+# ==============================================================================
+
+[fast_engine]
+# 快模型 (System 1)：低延迟、高确定性反射推理服务 (Laya)
+# 负责 10~20ms 级轻量级微观交互选择、弹窗/Cookie 干扰自愈、表单对齐与达成状态探针
+provider = "laya"
+endpoint = "http://127.0.0.1:8000"
+model = "multilingual"
+confidence_threshold = 0.85
+timeout_ms = 5000
+
+[slow_engine]
+# 慢模型 (System 2)：宏观目标拆解与疑难仲裁大模型
+# 采用 RPC 协议方式与本项目进行交互
+provider = "rpc"
+endpoint = "http://127.0.0.1:50051"
+timeout_ms = 60000
+
+# 若使用传统 OpenAI 兼容 REST 协议，可配置以下字段并将 provider 设为 "openai"：
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# model = "gpt-4o"
+
+[rpc_server]
+# 本项目对外暴露的标准 JSON-RPC 2.0 服务 (供外部慢大模型/Agent 客户端调用本项目)
+# 外部慢模型可通过 HTTP POST 发送 JSON-RPC 请求，控制浏览器并利用本地 Laya 快速推理
+enabled = true
+listen = "127.0.0.1:9090"
+
+[browser]
+# 浏览器启动参数
+headless = true
+# 窗口尺寸与视口撑满模式 (默认 1920x1080 满屏/无黑边模拟)
+window_width = 1920
+window_height = 1080
+# 若需连接已启动的 Chrome 远程调试端口，可取消注释：
+# cdp_endpoint = "http://127.0.0.1:9222"

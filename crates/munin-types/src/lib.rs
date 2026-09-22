@@ -1,3 +1,12 @@
+pub mod config;
+pub mod scenario;
+pub use config::{
+    BrowserProfileConfig, FastEngineConfig, MuninConfig, RpcServerConfig, SlowEngineConfig,
+};
+pub use scenario::{
+    FillAction, Scenario, ScenarioAction, ScenarioReport, ScenarioStep, StepResult,
+};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

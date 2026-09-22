@@ -37,7 +37,17 @@ impl CdpDriver {
 
     /// 启动本地 Chromium/Chrome 实例
     pub async fn launch_headless(headless: bool) -> Result<Self> {
-        let mut builder = BrowserConfig::builder();
+        for lock in &["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+            let p = std::path::Path::new("/tmp/chromiumoxide-runner").join(lock);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        let mut builder = BrowserConfig::builder()
+            .viewport(None)
+            .window_size(1920, 1080)
+            .arg("--start-maximized")
+            .arg("--no-default-browser-check");
         if !headless {
             builder = builder.with_head();
         }
@@ -130,7 +140,10 @@ impl BrowserDriver for CdpDriver {
             })()
         "#;
 
-        let eval_res = page.evaluate(script).await?;
+        let eval_fut = page.evaluate(script);
+        let eval_res = tokio::time::timeout(std::time::Duration::from_secs(3), eval_fut)
+            .await
+            .map_err(|_| anyhow!("CDP evaluate timed out waiting for execution context"))??;
         let value = eval_res.into_value::<serde_json::Value>()?;
         let nodes: Vec<DOMElementNode> = serde_json::from_value(value)?;
         Ok(nodes)
@@ -202,10 +215,18 @@ impl BrowserDriver for CdpDriver {
 
     async fn evaluate_js(&self, script: &str) -> Result<serde_json::Value> {
         let page = self.active_page()?;
-        let eval_res = page.evaluate(script).await?;
+        let trimmed = script.trim();
+        let wrapped = if trimmed.starts_with("(() =>") || trimmed.starts_with("(function") {
+            trimmed.to_string()
+        } else {
+            format!("(() => {{ try {{ return ({}); }} catch(e) {{ {}; return null; }} }})()", trimmed, trimmed)
+        };
+        let eval_fut = page.evaluate(wrapped);
+        let eval_res = tokio::time::timeout(std::time::Duration::from_secs(3), eval_fut)
+            .await
+            .map_err(|_| anyhow!("CDP evaluate timed out waiting for execution context"))??;
         Ok(eval_res.value().cloned().unwrap_or(serde_json::Value::Null))
     }
-
     async fn take_screenshot(&self) -> Result<Vec<u8>> {
         let page = self.active_page()?;
         let params = ScreenshotParams::builder().build();

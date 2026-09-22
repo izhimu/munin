@@ -1,5 +1,9 @@
+pub mod rpc;
+pub mod scenario;
 pub mod supervisor;
 
+pub use rpc::MuninRpcServer;
+pub use scenario::{Scenario, ScenarioAction, ScenarioReport, ScenarioRunner, ScenarioStep};
 pub use supervisor::{BiSystemSupervisor, Supervisor};
 
 #[cfg(test)]

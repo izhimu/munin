@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/munin-types",
+    "crates/munin-driver",
+    "crates/munin-engine",
+    "crates/munin-perception",
+    "crates/munin-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Libellula Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+munin-types = { path = "crates/munin-types" }
+munin-driver = { path = "crates/munin-driver" }
+munin-engine = { path = "crates/munin-engine" }
+munin-perception = { path = "crates/munin-perception" }
+munin-core = { path = "crates/munin-core" }
+
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+parking_lot = "0.12"
+base64 = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chromiumoxide = { version = "0.9", default-features = false, features = ["rustls", "zip0"] }
+futures = "0.3"

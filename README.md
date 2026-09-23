@@ -199,10 +199,11 @@ munin/
 │   ├── munin-engine/           # LayaFastEngine (10ms) & OpenAISlowEngine (LLM)
 │   ├── munin-perception/       # OverlayBuster, StateProbe, FormMapper, CandidatePruner
 │   ├── munin-core/             # BiSystemSupervisor, FSM, and Confidence Gating
+│   │   └── tests/
+│   │       └── e2e_test.rs     # Full-suite integration tests
 │   └── munin-cli/              # Standalone CLI binary (open, run, demo)
+├── docs/
 │   └── ARCHITECTURE_DESIGN.md  # In-depth technical whitepaper and formal specs
-└── tests/
-    └── e2e_test.rs             # Full-suite integration tests
 ```
 
 ### Perception Middleware
@@ -219,7 +220,7 @@ munin/
 Run the entire test suite across all 5 workspace crates:
 
 ```bash
-# Run all 15 unit and integration tests
+# Run all unit and integration tests
 cargo test --workspace
 
 # Run tests with real-time tracing logs
@@ -229,7 +230,7 @@ cargo test --workspace -- --nocapture
 cargo test -p munin-core --test e2e_test
 ```
 
-All 15 test suites pass with **0 errors, 0 warnings**.
+All test suites pass with **0 errors, 0 warnings**.
 
 ---
 
@@ -253,7 +254,8 @@ All 15 test suites pass with **0 errors, 0 warnings**.
 - [x] Autonomous popup & overlay buster middleware
 - [x] Zero-dependency `MockDriver` for blazingly fast CI testing
 - [ ] Direct Playwright WebDriver BiDi adapter (Firefox & WebKit native support)
-- [x] Standalone `munin-cli` binary (`munin open`, `munin run`, `munin demo`)
+- [x] Standalone `munin-cli` binary (`munin install`, `munin serve`, `munin test`, `munin open`, `munin run`, `munin demo`)
+- [x] AI Agent Skill integration (`~/.agents/skills/munin/SKILL.md`)
 
 ---
 

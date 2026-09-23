@@ -17,6 +17,8 @@ timeout_ms = 5000
 provider = "rpc"
 endpoint = "http://127.0.0.1:50051"
 timeout_ms = 60000
+# 仲裁失败时的降级策略: "none"（默认，直接报错）| "heuristic"（规则匹配最近候选，无需外部 RPC）
+# fallback = "heuristic"
 
 # 若使用传统 OpenAI 兼容 REST 协议，可配置以下字段并将 provider 设为 "openai"：
 # api_key = "sk-..."

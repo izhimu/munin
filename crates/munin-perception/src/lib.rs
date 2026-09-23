@@ -1,9 +1,11 @@
 pub mod form;
+pub mod memory;
 pub mod overlay;
 pub mod probe;
 pub mod pruner;
 
 pub use form::FormMapper;
+pub use memory::RecoveryMemory;
 pub use overlay::OverlayBuster;
 pub use probe::StateProbe;
 pub use pruner::CandidatePruner;

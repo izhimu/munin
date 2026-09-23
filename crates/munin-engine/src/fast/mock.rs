@@ -16,6 +16,13 @@ struct MockFastInner {
     score_map: HashMap<String, (f32, f32)>,
     probe_sequence: Vec<(bool, f32)>,
     probe_call_count: usize,
+    /// 恢复图返回的阻塞判定（None 时默认无阻塞）
+    blocked_override: Option<(bool, f32)>,
+    /// 阻塞判定序列（按调用次数消费，耗尽后保持最后值；优先级高于 blocked_override）
+    blocked_sequence: Vec<(bool, f32)>,
+    blocked_call_count: usize,
+    /// 恢复图返回的恢复动作类别（None 时默认 Retry）
+    recovery_override: Option<(munin_types::RecoveryKind, f32)>,
 }
 /// 内存模拟快引擎（用于单元测试与确定性验证）
 #[derive(Debug, Clone, Default)]
@@ -88,6 +95,23 @@ impl MockFastEngine {
         inner.probe_sequence = sequence;
         inner.probe_call_count = 0;
     }
+
+    /// 强制恢复图返回指定阻塞判定（测试弹窗/恢复路径用）
+    pub fn set_blocked(&self, blocked: bool, confidence: f32) {
+        self.inner.lock().blocked_override = Some((blocked, confidence));
+    }
+
+    /// 强制恢复图返回指定恢复动作类别
+    pub fn set_recovery(&self, kind: munin_types::RecoveryKind, confidence: f32) {
+        self.inner.lock().recovery_override = Some((kind, confidence));
+    }
+
+    /// 阻塞判定按序列消费（如首次 true 后续 false，模拟弹窗消解后恢复通畅）
+    pub fn set_blocked_sequence(&self, sequence: Vec<(bool, f32)>) {
+        let mut inner = self.inner.lock();
+        inner.blocked_sequence = sequence;
+        inner.blocked_call_count = 0;
+    }
 }
 
 #[async_trait]
@@ -151,9 +175,77 @@ impl FastEngine for MockFastEngine {
                 return Ok(*v);
             }
         }
-        if let Some((score, conf)) = inner.default_score {
-            return Ok((score, conf));
+        if let Some((score, conf)) = &inner.default_score {
+            return Ok((*score, *conf));
         }
         Ok((5.0, 0.90))
+    }
+
+    async fn recovery_graph(
+        &self,
+        state: &serde_json::Value,
+        expected_outcome: &str,
+        criteria: &HashMap<String, String>,
+    ) -> Result<munin_types::RecoveryVerdict> {
+        // 消费一次 probe 序列驱动 achieved 判定（与旧 probe_and_choice 语义对齐）
+        let (achieved_r, achieved_c) = self.probe(state, expected_outcome).await?;
+        let achieved = (achieved_r, achieved_c);
+
+        // 阻塞与恢复判定：优先序列消费，其次注入值，否则默认无阻塞 + Retry
+        let (blocked, recovery) = {
+            let mut inner = self.inner.lock();
+            let blocked = if !inner.blocked_sequence.is_empty() {
+                let idx = inner.blocked_call_count;
+                inner.blocked_call_count += 1;
+                if idx < inner.blocked_sequence.len() {
+                    inner.blocked_sequence[idx]
+                } else {
+                    *inner.blocked_sequence.last().unwrap()
+                }
+            } else {
+                inner.blocked_override.unwrap_or((false, 0.95))
+            };
+            (
+                blocked,
+                inner
+                    .recovery_override
+                    .unwrap_or((munin_types::RecoveryKind::Retry, 0.90)),
+            )
+        };
+
+        let target = if criteria.is_empty() {
+            None
+        } else {
+            Some(
+                self.choice(state, "哪个元素是推进当前任务目标最匹配的交互项？", criteria)
+                    .await?,
+            )
+        };
+
+        let recovery_target = if criteria.is_empty() {
+            None
+        } else {
+            Some(
+                self.choice(state, "恢复动作（如关闭弹窗、解除遮罩）应作用于哪个元素？", criteria)
+                    .await?,
+            )
+        };
+
+        Ok(munin_types::RecoveryVerdict {
+            achieved,
+            blocked,
+            blocker: (munin_types::BlockerClass::None, 0.95),
+            recovery,
+            target,
+            recovery_target,
+        })
+    }
+
+    async fn match_memory(
+        &self,
+        _state: &serde_json::Value,
+        _entries: &[munin_types::MemoryEntry],
+    ) -> Result<Option<(usize, f32)>> {
+        Ok(None)
     }
 }

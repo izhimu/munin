@@ -45,6 +45,12 @@ impl RpcSlowEngine {
         &self.endpoint
     }
 
+    /// 健康检查：探测慢引擎 RPC 服务是否可达
+    pub async fn ping(&self) -> Result<()> {
+        self.call_rpc("ping", serde_json::json!({})).await?;
+        Ok(())
+    }
+
     /// 发送底层标准 JSON-RPC 2.0 请求
     async fn call_rpc(&self, method: &str, params: Value) -> Result<Value> {
         let id = self.req_counter.fetch_add(1, Ordering::Relaxed);

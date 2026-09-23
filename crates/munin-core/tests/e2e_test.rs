@@ -31,10 +31,15 @@ async fn test_patrol_dispatch_flow_e2e_mock() -> Result<()> {
     // - 业务选择: btn-dispatch-team (置信度 0.95)
     // - 探针序列: 初始未完成 -> 完成
     let fast_engine = MockFastEngine::new().with_probe_sequence(vec![
-        (false, 0.10), // Step 1 pre-check
-        (true, 0.95),  // Step 1 post-check
+        (false, 0.10), // 轮 1：弹窗阻塞中，未达成
+        (false, 0.20), // 轮 2：弹窗已消解，未达成 → 点击业务按钮
+        (true, 0.95),  // 轮 3：点击后达成
     ]);
+    // 第一轮：存在弹窗阻塞 → 消解；消解后页面通畅
+    fast_engine.set_blocked_sequence(vec![(true, 0.95), (false, 0.95)]);
+    fast_engine.set_recovery(munin_types::RecoveryKind::Dismiss, 0.95);
     fast_engine.map_choice_by_instruction("closes or dismisses", "btn-dismiss-notice", 0.95);
+    fast_engine.map_choice_by_instruction("恢复动作", "btn-dismiss-notice", 0.95);
     fast_engine.map_choice_by_instruction("推进当前任务目标", "btn-dispatch-team", 0.95);
 
     // 配置慢引擎规划：
@@ -44,7 +49,7 @@ async fn test_patrol_dispatch_flow_e2e_mock() -> Result<()> {
         "工单已成功派发并进入流转状态",
     )]);
 
-    let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, 0.85)
+    let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, 0.85).with_in_memory_recovery()
         .with_step_delay_ms(0);
 
     // 2. 访问智慧养护工单系统

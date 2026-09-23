@@ -32,7 +32,7 @@ mod tests {
             "页面显示操作成功",
         )]);
 
-        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0);
+        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0).with_in_memory_recovery();
 
         supervisor.execute_goal("Submit the form successfully").await?;
 
@@ -60,7 +60,7 @@ mod tests {
         slow.set_default_steps(vec![MacroStep::new(1, "Pick correct option", "已确认选择")]);
         slow.set_default_arbitration("btn-target");
 
-        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0);
+        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0).with_in_memory_recovery();
 
         supervisor.execute_goal("Pick target option").await?;
 
@@ -83,7 +83,10 @@ mod tests {
 
         let fast = MockFastEngine::new()
             .with_probe_sequence(vec![(false, 0.10), (true, 0.91)]);
+        fast.set_blocked_sequence(vec![(true, 0.95), (false, 0.95)]);
+        fast.set_recovery(munin_types::RecoveryKind::Dismiss, 0.95);
         fast.map_choice_by_instruction("closes or dismisses", "btn-dismiss-ad", 0.95);
+        fast.map_choice_by_instruction("恢复动作", "btn-dismiss-ad", 0.95);
         fast.map_choice_by_instruction("推进当前任务目标", "btn-next", 0.90);
         let slow = MockSlowEngine::new().with_steps(vec![MacroStep::new(
             1,
@@ -91,7 +94,7 @@ mod tests {
             "已进入下一页",
         )]);
 
-        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0);
+        let mut supervisor = Supervisor::new(driver, fast, slow, 0.85).with_step_delay_ms(0).with_in_memory_recovery();
 
         supervisor.execute_goal("Go to next page").await?;
 

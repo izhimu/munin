@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use munin_core::{BiSystemSupervisor, MuninRpcServer, Scenario, ScenarioRunner};
 use munin_driver::cdp::CdpDriver;
 use munin_driver::mock::MockDriver;
@@ -14,35 +15,7 @@ use std::env;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
-const HELP: &str = r#"Munin CLI - Reflex-Driven Browser Automation Framework
-
-USAGE:
-  munin open <url> [options]
-  munin run <goal> --url <url> [options]
-  munin test <scenario.yaml> [options]
-  munin serve [options]
-  munin demo
-  munin help
-
-COMMANDS:
-  open <url>                 Open browser and navigate to URL
-  run <goal> --url <url>     Execute natural language goal with Dual-Engine
-  test <scenario.yaml>       Execute declarative test scenario internally (0 LLM overhead)
-  serve                      Start JSON-RPC 2.0 service for external slow models/agents
-  demo                       Run standalone reflex demonstration
-  help                       Show this help message
-
-OPTIONS:
-  --config <path>            Path to munin.toml configuration file (default: munin.toml)
-  --url <url>                Target webpage URL (required for 'run')
-  --listen <addr>            Listening host and port for RPC server (default: 127.0.0.1:9090)
-  --mock                     Use mock engines (zero external API keys or services required)
-  --headed                   Show browser window while running
-  --headless                 Run browser in background without window
-  --cdp <url>                Connect to existing CDP endpoint (e.g. http://127.0.0.1:9222)
-  --threshold <float>        Confidence threshold (default: 0.85 or from config)
-
-CONFIGURATION FILE:
+const AFTER_HELP: &str = r#"CONFIGURATION FILE:
   munin.toml                 Configures fast model (Laya), slow model RPC/OpenAI, and server
 
 ENVIRONMENT VARIABLES:
@@ -50,33 +23,148 @@ ENVIRONMENT VARIABLES:
   OPENAI_BASE_URL            Base URL for OpenAI-compatible endpoint
   OPENAI_MODEL               Model name for slow planner (default: gpt-4o)
   LAYA_ENDPOINT              Endpoint for System 1 fast reflexes (default: http://127.0.0.1:8000)
-  RUST_LOG                   Log level filter (e.g. info, debug)
-"#;
+  RUST_LOG                   Log level filter (e.g. info, debug)"#;
+
+/// Munin CLI - Reflex-Driven Browser Automation Framework
+#[derive(Parser)]
+#[command(name = "munin", version, after_help = AFTER_HELP)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Open browser and navigate to URL
+    Open(OpenArgs),
+    /// Execute natural language goal with Dual-Engine
+    Run(RunArgs),
+    /// Execute declarative test scenario internally (0 LLM overhead)
+    Test(TestArgs),
+    /// Start JSON-RPC 2.0 service for external slow models/agents
+    Serve(ServeArgs),
+    /// Stop a running 'munin serve' instance
+    Stop(StopArgs),
+    /// Restart a running 'munin serve' instance with its original arguments
+    Restart(StopArgs),
+    /// Run standalone reflex demonstration
+    Demo,
+    /// Interactively initialize configuration and install Agent Skill
+    Install(InstallArgs),
+}
+
+#[derive(Args)]
+struct OpenArgs {
+    /// Target webpage URL
+    url: String,
+    /// Run browser in background without window
+    #[arg(long, conflicts_with = "headed")]
+    headless: bool,
+    /// Show browser window while running
+    #[arg(long)]
+    headed: bool,
+    /// Connect to existing CDP endpoint (e.g. http://127.0.0.1:9222)
+    #[arg(long)]
+    cdp: Option<String>,
+}
+
+#[derive(Args)]
+struct RunArgs {
+    /// Natural language goal to execute
+    goal: String,
+    /// Target webpage URL (required for 'run')
+    #[arg(long)]
+    url: String,
+    /// Path to munin.toml configuration file (default: munin.toml)
+    #[arg(long)]
+    config: Option<String>,
+    /// Use mock engines (zero external API keys or services required)
+    #[arg(long)]
+    mock: bool,
+    /// Run browser in background without window
+    #[arg(long, conflicts_with = "headed")]
+    headless: bool,
+    /// Show browser window while running
+    #[arg(long)]
+    headed: bool,
+    /// Connect to existing CDP endpoint (e.g. http://127.0.0.1:9222)
+    #[arg(long)]
+    cdp: Option<String>,
+    /// Confidence threshold (default: 0.85 or from config)
+    #[arg(long)]
+    threshold: Option<f32>,
+}
+
+#[derive(Args)]
+struct TestArgs {
+    /// Declarative scenario file (YAML)
+    #[arg(name = "scenario.yaml")]
+    scenario: String,
+    /// Path to munin.toml configuration file (default: munin.toml)
+    #[arg(long)]
+    config: Option<String>,
+    /// Use mock engines (zero external API keys or services required)
+    #[arg(long)]
+    mock: bool,
+    /// Run browser in background without window
+    #[arg(long, conflicts_with = "headed")]
+    headless: bool,
+    /// Show browser window while running
+    #[arg(long)]
+    headed: bool,
+    /// Connect to existing CDP endpoint (e.g. http://127.0.0.1:9222)
+    #[arg(long)]
+    cdp: Option<String>,
+}
+
+#[derive(Args)]
+struct StopArgs {
+    /// Listening host and port of the instance to stop (default: 127.0.0.1:9090)
+    #[arg(long)]
+    listen: Option<String>,
+}
+
+#[derive(Args)]
+struct ServeArgs {
+    /// Listening host and port for RPC server (default: 127.0.0.1:9090)
+    #[arg(long)]
+    listen: Option<String>,
+    /// Path to munin.toml configuration file (default: munin.toml)
+    #[arg(long)]
+    config: Option<String>,
+    /// Use mock engines (zero external API keys or services required)
+    #[arg(long)]
+    mock: bool,
+    /// Run browser in background without window
+    #[arg(long, conflicts_with = "headed")]
+    headless: bool,
+    /// Show browser window while running
+    #[arg(long)]
+    headed: bool,
+    /// Connect to existing CDP endpoint (e.g. http://127.0.0.1:9222)
+    #[arg(long)]
+    cdp: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("{}", HELP);
-        return Ok(());
-    }
+    let cli = Cli::parse();
 
-    let command = args[1].as_str();
     let res = tokio::select! {
         res = async {
-            match command {
-                "help" | "-h" | "--help" => {
-                    println!("{}", HELP);
+            match cli.command {
+                Some(Commands::Open(args)) => cmd_open(args).await,
+                Some(Commands::Run(args)) => cmd_run(args).await,
+                Some(Commands::Serve(args)) => cmd_serve(args).await,
+                Some(Commands::Stop(args)) => cmd_stop(args).await,
+                Some(Commands::Restart(args)) => cmd_restart(args).await,
+                Some(Commands::Test(args)) => cmd_test(args).await,
+                Some(Commands::Demo) => cmd_demo().await,
+                Some(Commands::Install(args)) => cmd_install(args).await,
+                None => {
+                    Cli::command().print_help()?;
+                    println!();
                     Ok(())
-                }
-                "open" => cmd_open(&args[2..]).await,
-                "run" => cmd_run(&args[2..]).await,
-                "serve" => cmd_serve(&args[2..]).await,
-                "test" => cmd_test(&args[2..]).await,
-                "demo" => cmd_demo().await,
-                unknown => {
-                    eprintln!("Unknown command: '{}'\n", unknown);
-                    println!("{}", HELP);
-                    std::process::exit(1);
                 }
             }
         } => res,
@@ -95,50 +183,43 @@ async fn main() -> Result<()> {
 async fn init_logger() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                // chromiumoxide 对新版 Chromium CDP 扩展字段反序列化失败，WS Invalid message 刷屏
+                EnvFilter::new("info,chromiumoxide::handler=error")
+            }),
         )
         .try_init();
 }
 
-async fn cmd_open(args: &[String]) -> Result<()> {
+/// 归一化目标 URL：缺少协议头时补全 https://
+fn normalize_url(url: String) -> String {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        format!("https://{}", url)
+    } else {
+        url
+    }
+}
+
+/// 解析 --headless/--headed 互斥标志为可选覆盖值
+fn headless_opt(headless: bool, headed: bool) -> Option<bool> {
+    if headed {
+        Some(false)
+    } else if headless {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+async fn cmd_open(args: OpenArgs) -> Result<()> {
     init_logger().await;
 
-    let mut url = None;
-    let mut headless = false; // default headed for `open`
-    let mut cdp_endpoint = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--headless" => headless = true,
-            "--headed" => headless = false,
-            "--cdp" => {
-                i += 1;
-                if i < args.len() {
-                    cdp_endpoint = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --cdp"));
-                }
-            }
-            val if !val.starts_with('-') && url.is_none() => {
-                url = Some(val.to_string());
-            }
-            other => {
-                return Err(anyhow!("Unexpected argument: {other}"));
-            }
-        }
-        i += 1;
-    }
-
-    let target_url = url.ok_or_else(|| anyhow!("URL is required. Usage: munin open <url>"))?;
-    let normalized_url = if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
-        format!("https://{}", target_url)
-    } else {
-        target_url
-    };
+    // open 默认 headed，仅 --headless 显式开启无头模式
+    let headless = headless_opt(args.headless, args.headed).unwrap_or(false);
+    let normalized_url = normalize_url(args.url);
 
     println!("🚀 Launching browser...");
-    let mut driver = match cdp_endpoint {
+    let mut driver = match args.cdp {
         Some(endpoint) => {
             println!("🔌 Connecting to CDP at {}...", endpoint);
             CdpDriver::connect(endpoint).await?
@@ -163,91 +244,25 @@ async fn cmd_open(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_run(args: &[String]) -> Result<()> {
+async fn cmd_run(args: RunArgs) -> Result<()> {
     init_logger().await;
 
-    let mut goal = None;
-    let mut url = None;
-    let mut headless = None;
-    let mut mock = false;
-    let mut cdp_endpoint = None;
-    let mut threshold_override = None;
-    let mut config_path = None;
+    let config = MuninConfig::load_or_default(args.config.as_deref());
+    let normalized_url = normalize_url(args.url);
 
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--headless" => headless = Some(true),
-            "--headed" => headless = Some(false),
-            "--mock" => mock = true,
-            "--config" => {
-                i += 1;
-                if i < args.len() {
-                    config_path = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --config"));
-                }
-            }
-            "--url" => {
-                i += 1;
-                if i < args.len() {
-                    url = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --url"));
-                }
-            }
-            "--cdp" => {
-                i += 1;
-                if i < args.len() {
-                    cdp_endpoint = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --cdp"));
-                }
-            }
-            "--threshold" => {
-                i += 1;
-                if i < args.len() {
-                    threshold_override = Some(
-                        args[i]
-                            .parse()
-                            .context("Failed to parse --threshold as float")?,
-                    );
-                } else {
-                    return Err(anyhow!("Missing value for --threshold"));
-                }
-            }
-            val if !val.starts_with('-') && goal.is_none() => {
-                goal = Some(val.to_string());
-            }
-            other => {
-                return Err(anyhow!("Unexpected argument: {other}"));
-            }
-        }
-        i += 1;
-    }
-
-    let config = MuninConfig::load_or_default(config_path.as_deref());
-    let user_goal = goal.ok_or_else(|| anyhow!("Goal description is required. Usage: munin run <goal> --url <url>"))?;
-    let target_url = url.ok_or_else(|| anyhow!("--url is required. Usage: munin run <goal> --url <url>"))?;
-    let normalized_url = if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
-        format!("https://{}", target_url)
-    } else {
-        target_url
-    };
-
-    let threshold = threshold_override.unwrap_or(config.fast_engine.confidence_threshold);
-    let is_headless = headless.unwrap_or(config.browser.headless);
-    let cdp = cdp_endpoint.or(config.browser.cdp_endpoint);
+    let threshold = args.threshold.unwrap_or(config.fast_engine.confidence_threshold);
+    let is_headless = headless_opt(args.headless, args.headed).unwrap_or(config.browser.headless);
+    let cdp = args.cdp.or(config.browser.cdp_endpoint);
 
     println!("================================================================");
     println!("  🦅 Munin Dual-Engine Execution Pipeline");
     println!("================================================================");
-    println!("• Goal:      {}", user_goal);
+    println!("• Goal:      {}", args.goal);
     println!("• Target:    {}", normalized_url);
     println!("• Threshold: {:.2}", threshold);
     println!("• Fast Eng:  {} ({})", config.fast_engine.provider, config.fast_engine.endpoint);
     println!("• Slow Eng:  {} ({})", config.slow_engine.provider, config.slow_engine.endpoint);
-    println!("• Engine:    {}", if mock { "Mock Engines" } else { "Active Engines" });
+    println!("• Engine:    {}", if args.mock { "Mock Engines" } else { "Active Engines" });
     println!("----------------------------------------------------------------\n");
 
     let mut driver = match cdp {
@@ -267,17 +282,17 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     println!("🔗 Navigating to {}...", normalized_url);
     driver.goto(&normalized_url).await?;
 
-    if mock {
+    if args.mock {
         let fast_engine = MockFastEngine::new().with_probe_sequence(vec![
             (false, 0.20),
             (true, 0.95),
         ]);
         let slow_engine = MockSlowEngine::new().with_steps(vec![
-            MacroStep::new(1, &user_goal, "任务完成"),
+            MacroStep::new(1, &args.goal, "任务完成"),
         ]);
 
         let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, threshold);
-        supervisor.execute_goal(&user_goal).await?;
+        supervisor.execute_goal(&args.goal).await?;
     } else {
         let fast_endpoint = env::var("LAYA_ENDPOINT").unwrap_or_else(|_| config.fast_engine.endpoint.clone());
         let fast_engine = LayaFastEngine::with_model(fast_endpoint, &config.fast_engine.model);
@@ -287,8 +302,12 @@ async fn cmd_run(args: &[String]) -> Result<()> {
                 &config.slow_engine.endpoint,
                 Duration::from_millis(config.slow_engine.timeout_ms),
             );
-            let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, threshold);
-            supervisor.execute_goal(&user_goal).await?;
+            if let Err(e) = slow_engine.ping().await {
+                eprintln!("⚠️  [WARN] 慢引擎 RPC 服务不可达 ({}): {}。execute_goal 将因仲裁失败而重试超限。", config.slow_engine.endpoint, e);
+            }
+            let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, threshold)
+                .with_slow_fallback_heuristic(config.slow_engine.fallback.as_deref() == Some("heuristic"));
+            supervisor.execute_goal(&args.goal).await?;
         } else {
             let api_key = env::var("OPENAI_API_KEY")
                 .ok()
@@ -306,8 +325,9 @@ async fn cmd_run(args: &[String]) -> Result<()> {
                 .unwrap_or_else(|| "gpt-4o".to_string());
             let slow_engine = OpenAISlowEngine::with_config(api_key, base_url, model);
 
-            let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, threshold);
-            supervisor.execute_goal(&user_goal).await?;
+            let mut supervisor = BiSystemSupervisor::new(driver, fast_engine, slow_engine, threshold)
+                .with_slow_fallback_heuristic(config.slow_engine.fallback.as_deref() == Some("heuristic"));
+            supervisor.execute_goal(&args.goal).await?;
         }
     }
 
@@ -315,56 +335,114 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_serve(args: &[String]) -> Result<()> {
-    init_logger().await;
+/// serve 实例记录文件路径（按监听端口区分多实例）
+fn serve_record_path(listen: &str) -> std::path::PathBuf {
+    let port = listen.rsplit(':').next().unwrap_or("9090");
+    std::env::temp_dir().join(format!("munin-serve-{port}.json"))
+}
 
-    let mut config_path = None;
-    let mut listen_override = None;
-    let mut mock = false;
-    let mut headless = None;
-    let mut cdp_endpoint = None;
+/// 写入 serve 实例记录：PID + 原始 CLI 参数（供 restart 复现）
+fn write_serve_record(listen: &str) {
+    let record = serde_json::json!({
+        "pid": std::process::id(),
+        "args": std::env::args().skip(1).collect::<Vec<_>>(),
+        "listen": listen,
+    });
+    let _ = std::fs::write(
+        serve_record_path(listen),
+        serde_json::to_string_pretty(&record).unwrap_or_default(),
+    );
+}
 
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--mock" => mock = true,
-            "--headless" => headless = Some(true),
-            "--headed" => headless = Some(false),
-            "--config" => {
-                i += 1;
-                if i < args.len() {
-                    config_path = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --config"));
-                }
-            }
-            "--listen" => {
-                i += 1;
-                if i < args.len() {
-                    listen_override = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --listen"));
-                }
-            }
-            "--cdp" => {
-                i += 1;
-                if i < args.len() {
-                    cdp_endpoint = Some(args[i].clone());
-                } else {
-                    return Err(anyhow!("Missing value for --cdp"));
-                }
-            }
-            other => {
-                return Err(anyhow!("Unexpected argument: {other}"));
+/// 读取并校验 serve 实例记录（PID 存活才返回）
+fn read_live_record(listen: &str) -> Option<(u32, Vec<String>)> {
+    let path = serve_record_path(listen);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let pid = v.get("pid")?.as_u64()? as u32;
+    let args: Vec<String> = v
+        .get("args")?
+        .as_array()?
+        .iter()
+        .filter_map(|a| a.as_str().map(|s| s.to_string()))
+        .collect();
+    // 校验 PID 存活（kill -0 语义）
+    let alive = std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if alive {
+        Some((pid, args))
+    } else {
+        let _ = std::fs::remove_file(&path);
+        None
+    }
+}
+
+async fn cmd_stop(args: StopArgs) -> Result<()> {
+    let listen = args.listen.unwrap_or_else(|| "127.0.0.1:9090".to_string());
+    match read_live_record(&listen) {
+        Some((pid, _)) => {
+            let status = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .status()?;
+            if status.success() {
+                let _ = std::fs::remove_file(serve_record_path(&listen));
+                println!("🛑 已停止 munin serve (pid {pid}, listen {listen})");
+                Ok(())
+            } else {
+                Err(anyhow!("kill {pid} failed"))
             }
         }
-        i += 1;
+        None => Err(anyhow!("未找到运行中的 munin serve 实例 (listen {listen})")),
     }
+}
 
-    let config = MuninConfig::load_or_default(config_path.as_deref());
-    let listen_addr = listen_override.unwrap_or(config.rpc_server.listen);
-    let is_headless = headless.unwrap_or(config.browser.headless);
-    let cdp = cdp_endpoint.or(config.browser.cdp_endpoint);
+async fn cmd_restart(args: StopArgs) -> Result<()> {
+    let listen = args.listen.unwrap_or_else(|| "127.0.0.1:9090".to_string());
+    let Some((pid, serve_args)) = read_live_record(&listen) else {
+        return Err(anyhow!("未找到运行中的 munin serve 实例 (listen {listen})"));
+    };
+    // 停旧实例
+    let _ = std::process::Command::new("kill")
+        .arg(pid.to_string())
+        .status();
+    let _ = std::fs::remove_file(serve_record_path(&listen));
+    // 等端口释放
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // 以原参数后台拉起新实例（脱离父进程，输出重定向到日志）
+    let exe = std::env::current_exe()?;
+    let log_path = std::env::temp_dir().join(format!(
+        "munin-serve-{}.log",
+        listen.rsplit(':').next().unwrap_or("9090")
+    ));
+    let log = std::fs::File::create(&log_path)?;
+    let log_err = log.try_clone()?;
+    let child = std::process::Command::new(exe)
+        .args(&serve_args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::from(log))
+        .stderr(std::process::Stdio::from(log_err))
+        .spawn()?;
+    println!(
+        "🔄 已重启 munin serve (旧 pid {pid} → 新 pid {}, listen {listen}), 日志: {}",
+        child.id(),
+        log_path.display()
+    );
+    Ok(())
+}
+
+async fn cmd_serve(args: ServeArgs) -> Result<()> {
+    init_logger().await;
+
+    let config = MuninConfig::load_or_default(args.config.as_deref());
+    let listen_addr = args.listen.unwrap_or(config.rpc_server.listen);
+    let is_headless = headless_opt(args.headless, args.headed).unwrap_or(config.browser.headless);
+    let cdp = args.cdp.or(config.browser.cdp_endpoint);
+
+    // 记录 PID 与原始参数，供 `munin stop` / `munin restart` 管理
+    write_serve_record(&listen_addr);
 
     println!("================================================================");
     println!("  🦅 Munin JSON-RPC 2.0 Dual-Engine Server");
@@ -372,9 +450,11 @@ async fn cmd_serve(args: &[String]) -> Result<()> {
     println!("• RPC Listen: http://{}", listen_addr);
     println!("• Fast Eng:   {} ({})", config.fast_engine.provider, config.fast_engine.endpoint);
     println!("• Slow Eng:   {} ({})", config.slow_engine.provider, config.slow_engine.endpoint);
-    println!("• Engine:     {}", if mock { "Mock Engines" } else { "Laya + Browser" });
+    println!("• Engine:     {}", if args.mock { "Mock Engines" } else { "Laya + Browser" });
     println!("----------------------------------------------------------------\n");
     println!("💡 Available JSON-RPC 2.0 Methods:");
+    println!("  - get_action_map(goal, [max])        # LLM 规划视图（首选入口）");
+    println!("  - execute_steps(steps[])            # 批量宏观步骤闭环");
     println!("  - execute_goal(goal, [url])");
     println!("  - navigate(url)");
     println!("  - get_interactive_elements([prune], [goal])");
@@ -384,9 +464,14 @@ async fn cmd_serve(args: &[String]) -> Result<()> {
     println!("  - bust_overlays()");
     println!("  - probe(assertion, [state])");
     println!("  - evaluate_js(script)");
+    println!("  - pick_date(node_id, date)       # AntD DatePicker 宏");
+    println!("  - select_option(node_id, label) # 统一下拉宏（原生 select + AntD/Element）");
+    println!("  - wait_for(selector, [state], [timeout_ms])");
+    println!("  - wait_for_network_idle([timeout_ms], [idle_ms])");
+    println!("  - wait_for_stable()");
     println!("  - ping()\n");
 
-    if mock {
+    if args.mock {
         let mut driver = MockDriver::new();
         driver.launch(true).await?;
         let fast_engine = MockFastEngine::new().with_probe_sequence(vec![(true, 0.95)]);
@@ -414,12 +499,18 @@ async fn cmd_serve(args: &[String]) -> Result<()> {
                 &config.slow_engine.endpoint,
                 Duration::from_millis(config.slow_engine.timeout_ms),
             );
+            // 启动时探测慢引擎可达性，避免僵死进程导致 execute_steps 硬编码失败
+            if let Err(e) = slow_engine.ping().await {
+                eprintln!("⚠️  [WARN] 慢引擎 RPC 服务不可达 ({}): {}。execute_steps 将因仲裁失败而重试超限。", config.slow_engine.endpoint, e);
+                eprintln!("       请启动真实 LLM 仲裁服务，或改用 --mock / provider = \"openai\"。");
+            }
             let supervisor = BiSystemSupervisor::new(
                 driver,
                 fast_engine,
                 slow_engine,
                 config.fast_engine.confidence_threshold,
-            );
+            )
+            .with_slow_fallback_heuristic(config.slow_engine.fallback.as_deref() == Some("heuristic"));
             let server = MuninRpcServer::new(supervisor, listen_addr);
             server.run().await?;
         } else {
@@ -444,7 +535,8 @@ async fn cmd_serve(args: &[String]) -> Result<()> {
                 fast_engine,
                 slow_engine,
                 config.fast_engine.confidence_threshold,
-            );
+            )
+            .with_slow_fallback_heuristic(config.slow_engine.fallback.as_deref() == Some("heuristic"));
             let server = MuninRpcServer::new(supervisor, listen_addr);
             server.run().await?;
         }
@@ -507,57 +599,26 @@ async fn cmd_demo() -> Result<()> {
     println!("\n🎉 演示闭环成功！");
     Ok(())
 }
-async fn cmd_test(args: &[String]) -> Result<()> {
+
+async fn cmd_test(args: TestArgs) -> Result<()> {
     init_logger().await;
-    let mut scenario_path = None;
-    let mut config_path = None;
-    let mut mock = false;
-    let mut headless = None;
-    let mut cdp_endpoint = None;
 
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--mock" => mock = true,
-            "--headless" => headless = Some(true),
-            "--headed" => headless = Some(false),
-            "--config" => {
-                i += 1;
-                if i < args.len() {
-                    config_path = Some(args[i].clone());
-                }
-            }
-            "--cdp" => {
-                i += 1;
-                if i < args.len() {
-                    cdp_endpoint = Some(args[i].clone());
-                }
-            }
-            val if !val.starts_with('-') && scenario_path.is_none() => {
-                scenario_path = Some(val.to_string());
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-
-    let target_file = scenario_path.ok_or_else(|| anyhow!("Scenario file path is required. Usage: munin test <scenario.yaml>"))?;
-    let scenario = Scenario::from_file(&target_file)?;
-    let config = MuninConfig::load_or_default(config_path.as_deref());
-    let is_headless = headless.unwrap_or(config.browser.headless);
-    let cdp = cdp_endpoint.or(config.browser.cdp_endpoint);
+    let scenario = Scenario::from_file(&args.scenario)?;
+    let config = MuninConfig::load_or_default(args.config.as_deref());
+    let is_headless = headless_opt(args.headless, args.headed).unwrap_or(config.browser.headless);
+    let cdp = args.cdp.or(config.browser.cdp_endpoint);
 
     println!("================================================================");
     println!("  🦅 Munin Internal Scenario Test Runner");
     println!("================================================================");
     println!("• Scenario:   {}", scenario.name);
-    println!("• File:       {}", target_file);
+    println!("• File:       {}", args.scenario);
     println!("• Base URL:   {}", scenario.base_url.as_deref().unwrap_or("Defined in steps"));
     println!("• Steps:      {} step(s)", scenario.steps.len());
-    println!("• Engine:     {}", if mock { "Mock Driver" } else { "CDP Browser + Laya" });
+    println!("• Engine:     {}", if args.mock { "Mock Driver" } else { "CDP Browser + Laya" });
     println!("----------------------------------------------------------------\n");
 
-    let report = if mock {
+    let report = if args.mock {
         let mut driver = MockDriver::new();
         driver.launch(true).await?;
         let fast_engine = MockFastEngine::new();
@@ -610,4 +671,149 @@ async fn wait_for_exit() {
         }
     }
     println!("🛑 Closing browser...");
+}
+
+const SKILL_MD_RAW: &str = include_str!("../../../docs/SKILL.md");
+
+const SKILL_FRONTMATTER: &str = r#"---
+name: munin
+description: |
+  Guide AI agents and LLMs on controlling and integrating with Munin: PREFER JSON-RPC 2.0 API mode for interactive browser control, macro execution, DOM perception, and semantic assertions. Fallback to CLI commands and YAML scenarios.
+metadata:
+  version: "0.1.0"
+---
+
+"#;
+
+#[derive(Args)]
+struct InstallArgs {
+    /// Skip interactive prompts and accept all defaults
+    #[arg(short, long)]
+    yes: bool,
+    /// Destination path for configuration file (default: ~/.munin/munin.toml)
+    #[arg(long)]
+    config: Option<String>,
+    /// Destination directory for AI Agent skill (default: ~/.agents/skills/munin)
+    #[arg(long)]
+    skill_dir: Option<String>,
+}
+
+fn prompt_line(prompt: &str, default: &str) -> String {
+    use std::io::{stdout, Write};
+    print!("{} [{}]: ", prompt, default);
+    let _ = stdout().flush();
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_ok() {
+        let trimmed = input.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    default.to_string()
+}
+
+async fn cmd_install(args: InstallArgs) -> Result<()> {
+    use std::path::PathBuf;
+
+    println!("================================================================");
+    println!("  🦅 Munin (奥丁灵鸦) —— 安装与环境初始化向导");
+    println!("================================================================\n");
+
+    let home = env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
+    let target_config_path = args.config.map(PathBuf::from).unwrap_or_else(|| {
+        home.join(".munin").join("munin.toml")
+    });
+    let target_skill_dir = args.skill_dir.map(PathBuf::from).unwrap_or_else(|| {
+        home.join(".agents").join("skills").join("munin")
+    });
+
+    let mut config = MuninConfig::default();
+
+    if args.yes {
+        println!("⚡ 已指定 --yes，使用标准默认配置自动生成...\n");
+    } else {
+        println!("📋 [1/2] 交互式生成运行时配置文件 (直接回车保留默认值)");
+        println!("----------------------------------------------------------------");
+
+        let fast_endpoint = prompt_line("• 快引擎 (Laya) 服务端点", &config.fast_engine.endpoint);
+        config.fast_engine.endpoint = fast_endpoint;
+
+        let fast_model = prompt_line("• 快引擎推理模型", &config.fast_engine.model);
+        config.fast_engine.model = fast_model;
+
+        let threshold_str = prompt_line(
+            "• 置信度门控仲裁阈值 (0.0 ~ 1.0)",
+            &format!("{:.2}", config.fast_engine.confidence_threshold),
+        );
+        if let Ok(t) = threshold_str.parse::<f32>() {
+            config.fast_engine.confidence_threshold = t;
+        }
+
+        let slow_provider = prompt_line("• 慢引擎提供者 (rpc / openai)", &config.slow_engine.provider);
+        config.slow_engine.provider = slow_provider.clone();
+
+        if slow_provider == "openai" {
+            let api_key = prompt_line("• OpenAI API Key", config.slow_engine.api_key.as_deref().unwrap_or(""));
+            if !api_key.is_empty() {
+                config.slow_engine.api_key = Some(api_key);
+            }
+            let base_url = prompt_line(
+                "• OpenAI Base URL",
+                config.slow_engine.base_url.as_deref().unwrap_or("https://api.openai.com/v1"),
+            );
+            config.slow_engine.base_url = Some(base_url);
+            let model = prompt_line(
+                "• OpenAI 模型名称",
+                config.slow_engine.model.as_deref().unwrap_or("gpt-4o"),
+            );
+            config.slow_engine.model = Some(model);
+        } else {
+            let slow_endpoint = prompt_line("• 慢引擎 RPC 服务端点", &config.slow_engine.endpoint);
+            config.slow_engine.endpoint = slow_endpoint;
+        }
+
+        let rpc_listen = prompt_line("• 本地 JSON-RPC 2.0 监听地址", &config.rpc_server.listen);
+        config.rpc_server.listen = rpc_listen;
+
+        let headless_str = prompt_line(
+            "• 浏览器默认后台无头模式 (true / false)",
+            if config.browser.headless { "true" } else { "false" },
+        );
+        config.browser.headless = headless_str.trim().eq_ignore_ascii_case("true");
+        println!();
+    }
+
+    // 1. 写入配置文件
+    if let Some(parent) = target_config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let toml_content = config.to_toml_string().map_err(|e| anyhow!("序列化配置失败: {e}"))?;
+    std::fs::write(&target_config_path, toml_content)?;
+    println!("✔ [配置就绪] 默认全局配置文件写入: {}", target_config_path.display());
+
+    // 2. 写入 AI Agent 统一规范 SKILL 文件 (~/.agents/skills/munin/SKILL.md)
+    println!("\n📋 [2/2] 安装 AI Agent Skill 标准指令");
+    println!("----------------------------------------------------------------");
+    std::fs::create_dir_all(&target_skill_dir)?;
+    let skill_path = target_skill_dir.join("SKILL.md");
+    let full_skill_content = format!("{}{}", SKILL_FRONTMATTER, SKILL_MD_RAW);
+    std::fs::write(&skill_path, &full_skill_content)?;
+    println!("✔ [Skill 就绪] 业界统一规范已安装: {}", skill_path.display());
+
+    // 3. 若存在 ~/.omp/agent/skills，同时兼容写入
+    let omp_skills_dir = home.join(".omp").join("agent").join("skills").join("munin");
+    if home.join(".omp").exists() && std::fs::create_dir_all(&omp_skills_dir).is_ok() {
+        let _ = std::fs::write(omp_skills_dir.join("SKILL.md"), &full_skill_content);
+        println!("✔ [兼容就绪] 已同步安装至 Oh-My-Pi: {}", omp_skills_dir.join("SKILL.md").display());
+    }
+
+    println!("\n================================================================");
+    println!("🎉 Munin 全局环境初始化完成！");
+    println!("================================================================");
+    println!("• 任意终端启动服务:     munin serve");
+    println!("• 任意终端运行测试:     munin test <scenario.yaml> --headed");
+    println!("• AI Agent 技能库已同步加载至 ~/.agents/skills/munin/");
+    println!("================================================================\n");
+
+    Ok(())
 }

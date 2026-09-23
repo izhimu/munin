@@ -99,6 +99,9 @@ pub struct SlowEngineConfig {
     pub base_url: Option<String>,
     /// OpenAI 模型名称 (例如 "gpt-4o", "deepseek-chat")
     pub model: Option<String>,
+    /// 仲裁失败时的降级策略: "none"（默认，直接报错）| "heuristic"（规则匹配最近候选）
+    #[serde(default)]
+    pub fallback: Option<String>,
 }
 
 impl Default for SlowEngineConfig {
@@ -110,6 +113,7 @@ impl Default for SlowEngineConfig {
             api_key: None,
             base_url: None,
             model: None,
+            fallback: None,
         }
     }
 }
@@ -187,10 +191,20 @@ impl MuninConfig {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
-    /// 尝试加载配置文件，优先使用用户指定路径，其次检查当前目录的 munin.toml / config.toml，否则返回默认配置
+    /// 尝试加载配置文件。优先级：
+    /// 1. 命令行参数 `--config <path>`
+    /// 2. 环境变量 `MUNIN_CONFIG`
+    /// 3. 当前工作目录下的 `munin.toml` / `config.toml`
+    /// 4. 用户全局目录 `~/.munin/munin.toml` / `~/.munin/config.toml`
+    /// 5. 都不存在则返回默认配置
     pub fn load_or_default(custom_path: Option<&str>) -> Self {
         if let Some(path) = custom_path {
             if let Ok(cfg) = Self::from_file(path) {
+                return cfg;
+            }
+        }
+        if let Ok(env_path) = std::env::var("MUNIN_CONFIG") {
+            if let Ok(cfg) = Self::from_file(&env_path) {
                 return cfg;
             }
         }
@@ -198,6 +212,16 @@ impl MuninConfig {
             if Path::new(candidate).exists() {
                 if let Ok(cfg) = Self::from_file(candidate) {
                     return cfg;
+                }
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            for candidate in &["munin.toml", "config.toml"] {
+                let p = Path::new(&home).join(".munin").join(candidate);
+                if p.exists() {
+                    if let Ok(cfg) = Self::from_file(p) {
+                        return cfg;
+                    }
                 }
             }
         }

@@ -62,16 +62,22 @@ impl OverlayBuster {
         &self,
         elements: &'a [DOMElementNode],
     ) -> Vec<&'a DOMElementNode> {
+        let squash = |s: &str| -> String { s.chars().filter(|c| !c.is_whitespace()).collect() };
         elements
             .iter()
             .filter(|e| {
                 let text = e.text.trim();
                 let aria = e.get_attribute("aria-label").unwrap_or("");
+                // CJK 空格归一化："确 定" 可命中 "确定"
+                let text_sq = squash(text);
+                let aria_sq = squash(aria);
                 self.dismiss_keywords.iter().any(|k| {
+                    let k_sq = squash(k);
                     text.contains(k)
                         || aria.contains(k)
                         || text.eq_ignore_ascii_case(k)
                         || aria.eq_ignore_ascii_case(k)
+                        || (!k_sq.is_empty() && (text_sq.contains(&k_sq) || aria_sq.contains(&k_sq)))
                 })
             })
             .collect()
@@ -84,7 +90,17 @@ impl OverlayBuster {
         fast: &F,
     ) -> Result<Option<String>> {
         let elements = driver.get_interactive_elements().await?;
-        let candidates = self.find_overlay_candidates(&elements);
+        self.bust_overlays_with(driver, fast, &elements).await
+    }
+
+    /// 复用调用方已抓取的元素快照执行弹窗自愈（避免一次 CDP 往返）
+    pub async fn bust_overlays_with<D: BrowserDriver, F: FastEngine>(
+        &self,
+        driver: &D,
+        fast: &F,
+        elements: &[DOMElementNode],
+    ) -> Result<Option<String>> {
+        let candidates = self.find_overlay_candidates(elements);
 
         if candidates.is_empty() {
             return Ok(None);

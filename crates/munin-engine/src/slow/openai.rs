@@ -130,7 +130,8 @@ Do not output any introductory or concluding text. Output JSON only."#;
         let system_prompt = r#"You are an expert browser automation supervisor and arbitrator (System 2).
 The fast reflex engine encountered low confidence or stalled on the current step.
 Analyze the provided DOM interactive elements and optional screenshot.
-Output a concise resolution: state the exact node ID to click or fill, or describe the specific corrective action required."#;
+If a specific element should be clicked, output strictly JSON: {"node_id": "<exact node id>"}.
+Otherwise output one concise sentence describing the corrective action required."#;
 
         let user_text = format!(
             "Current Step Intent: {}\nCandidate Elements Description:\n{}",

@@ -22,7 +22,7 @@ munin-engine = { path = "crates/munin-engine" }
 munin-perception = { path = "crates/munin-perception" }
 munin-core = { path = "crates/munin-core" }
 
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "io-std", "signal"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 parking_lot = "0.12"
 base64 = "0.22"

@@ -114,6 +114,9 @@ impl BrowserDriver for MockDriver {
         if !found && node_id.is_empty() {
             return Err(anyhow!("Cannot click on empty node_id"));
         }
+        // 模拟真实点击效果：被点击的弹窗/按钮节点从 DOM 中消失，
+        // 防止上层自愈循环反复命中同一节点造成死循环
+        inner.elements.retain(|e| e.node_id != node_id);
         Ok(())
     }
 
